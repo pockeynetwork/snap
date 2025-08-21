@@ -5,29 +5,26 @@ const path = require("path");
 const fs = require("fs");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 
-// DB a uploads na persistentním disku Renderu
-const DATA_DIR = "/data";
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
-const UPLOAD_DIR = path.join(DATA_DIR, "uploads");
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
-
-const db = new sqlite3.Database(path.join(DATA_DIR, "database.sqlite"));
+// SQLite databáze
+const db = new sqlite3.Database("database.sqlite");
 db.serialize(() => {
   db.run("CREATE TABLE IF NOT EXISTS photos (id INTEGER PRIMARY KEY, filename TEXT, name TEXT)");
   db.run("CREATE TABLE IF NOT EXISTS votes (photo_id INTEGER, ip TEXT, vote INTEGER, UNIQUE(photo_id, ip))");
 });
 
-// Multer
+// Multer (upload)
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+  destination: (req, file, cb) => cb(null, "uploads/"),
   filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
 });
 const upload = multer({ storage });
 
-app.use("/uploads", express.static(UPLOAD_DIR));
-app.use(express.static("views"));
+// Servování statických souborů
+app.use(express.static(path.join(__dirname))); // root složka pro index.html a adminek.html
+app.use(express.static("uploads"));            // složka s nahranými fotkami
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -75,7 +72,6 @@ app.post("/delete/:id", (req, res) => {
   });
 });
 
-
 // ADMIN - uprava skóre
 app.post("/admin/updateScore/:id", (req, res) => {
   const id = req.params.id;
@@ -88,11 +84,9 @@ app.post("/admin/updateScore/:id", (req, res) => {
   const newScore = parseInt(score);
   if (isNaN(newScore)) return res.status(400).json({ error: "Neplatné skóre" });
 
-  // Smažeme všechny hlasy a nastavíme nové skóre přímo
   db.run("DELETE FROM votes WHERE photo_id = ?", [id], function(err) {
     if (err) return res.status(500).json({ error: err });
     if (newScore !== 0) {
-      // Vložíme jeden virtuální hlas pro dosažení požadovaného skóre
       db.run("INSERT INTO votes (photo_id, ip, vote) VALUES (?, ?, ?)", [id, "admin", newScore], function(err2) {
         if (err2) return res.status(500).json({ error: err2 });
         res.json({ success: true });
@@ -107,7 +101,7 @@ app.post("/admin/updateScore/:id", (req, res) => {
 app.post("/vote/:id", (req, res) => {
   const photoId = req.params.id;
   const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-  const vote = req.body.vote; // 1 nebo -1
+  const vote = req.body.vote;
 
   db.run("INSERT OR REPLACE INTO votes (photo_id, ip, vote) VALUES (?, ?, ?)", 
     [photoId, ip, vote], 
@@ -118,5 +112,4 @@ app.post("/vote/:id", (req, res) => {
   );
 });
 
-app.listen(PORT, () => console.log(`✅ Server běží na portu ${PORT}`));
-
+app.listen(PORT, () => console.log(`✅ Server běží na http://localhost:${PORT}`));
