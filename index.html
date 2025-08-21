@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <title>Snapchat holky</title>
+  <style>
+    body { font-family: Arial; margin:0; background:#f5f5f5; }
+    .topbar { background:#ff0066; color:white; padding:15px; text-align:center; font-size:24px; }
+    .controls { text-align:center; margin:10px 0; }
+    .gallery { display:flex; flex-wrap:wrap; gap:20px; padding:20px; justify-content:center; }
+    .photo { background:white; border-radius:8px; box-shadow:0 2px 6px rgba(0,0,0,0.2); padding:10px; text-align:center; width:250px; transition: transform 0.2s; }
+    .photo:hover { transform: scale(1.03); }
+    .photo img { max-width:100%; border-radius:6px; }
+    .score { margin:10px 0; font-weight:bold; }
+    .btn { padding:5px 10px; margin:5px; border:none; border-radius:4px; cursor:pointer; }
+    .up { background:#28a745; color:white; }
+    .down { background:#dc3545; color:white; }
+    .title { font-size:18px; margin:5px 0; }
+    input, select { padding:5px 8px; margin:5px; border-radius:4px; border:1px solid #ccc; }
+  </style>
+</head>
+<body>
+  <div class="topbar">📸 Snapchat holky</div>
+
+  <div class="controls">
+    <input type="text" id="search" placeholder="Hledat podle názvu...">
+    <select id="sort">
+      <option value="desc">Nejlepší → nejhorší</option>
+      <option value="asc">Nejhorší → nejlepší</option>
+    </select>
+  </div>
+
+  <div id="bestPhoto"></div>
+  <div class="gallery" id="gallery"></div>
+
+  <script>
+    let allPhotos = [];
+
+    async function loadPhotos() {
+      const res = await fetch("/photos");
+      allPhotos = await res.json();
+      renderPhotos();
+      renderBestPhoto();
+    }
+
+    function renderPhotos() {
+      const search = document.getElementById("search").value.toLowerCase();
+      const sort = document.getElementById("sort").value;
+      const filtered = allPhotos.filter(p => (p.title || "").toLowerCase().includes(search));
+      filtered.sort((a,b) => sort==="desc"? b.score - a.score : a.score - b.score);
+
+      document.getElementById("gallery").innerHTML = filtered.map(p => `
+        <div class="photo">
+          <img src="${p.filename}" alt="">
+	${p.name ? `<div class="title">${p.name}</div>` : ""}
+          <div class="score">Score: ${p.score}</div>
+          <button class="btn up" onclick="vote(${p.id},1)">👍</button>
+          <button class="btn down" onclick="vote(${p.id},-1)">👎</button>
+        </div>
+      `).join("");
+    }
+
+    function renderBestPhoto() {
+      if(allPhotos.length === 0) return;
+      const best = allPhotos.reduce((prev, curr) => curr.score > prev.score ? curr : prev, allPhotos[0]);
+      document.getElementById("bestPhoto").innerHTML = `
+        <div style="padding:20px; text-align:center; background:#fff3cd; margin:10px;">
+          🏆 Nejlépe hodnocená fotka:<br>
+          <img src="${best.filename}" style="max-width:200px; border-radius:6px;">
+          ${best.name ? `<div>${best.name}</div>` : ""}
+          <div>Score: ${best.score}</div>
+        </div>
+      `;
+    }
+
+    async function vote(id, val) {
+      await fetch("/vote/" + id, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vote: val })
+      });
+      loadPhotos();
+    }
+
+    document.getElementById("search").addEventListener("input", renderPhotos);
+    document.getElementById("sort").addEventListener("change", renderPhotos);
+
+    loadPhotos();
+  </script>
+</body>
+</html>

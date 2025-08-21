@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin - Upload</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f0f0f0; display: flex; flex-direction: column; align-items: center; padding:20px; }
+    .login, .upload { background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); text-align: center; margin-bottom:20px; width: 350px; }
+    input, button { padding: 10px; margin: 8px; border-radius: 6px; border: 1px solid #ccc; width: 90%; }
+    button { background: #ff4da6; color: white; border: none; cursor: pointer; }
+    .photo-admin { display:flex; flex-direction: column; justify-content: space-between; align-items:flex-start; margin:5px 0; padding:5px 10px; border:1px solid #ccc; border-radius:6px; background:#fafafa; width:100%; }
+    .photo-admin img { max-width:50px; border-radius:4px; margin-right:10px; }
+    .delete-btn { background:#dc3545; padding:5px 10px; color:white; border:none; border-radius:4px; cursor:pointer; margin-top:5px; }
+    .score-update { margin-top:5px; }
+    .score-update input { width:60px; display:inline-block; margin-right:5px; }
+    .score-update button { padding:5px 8px; background:#007bff; color:white; border:none; border-radius:4px; cursor:pointer; }
+  </style>
+</head>
+<body>
+  <div class="login" id="loginBox">
+    <h2>Admin Login</h2>
+    <input type="text" id="username" placeholder="Jméno"><br>
+    <input type="password" id="password" placeholder="Heslo"><br>
+    <button onclick="login()">Přihlásit</button>
+  </div>
+
+  <div class="upload" id="uploadBox" style="display:none;">
+    <h2>Nahrát fotku</h2>
+    <form id="uploadForm">
+      <input type="text" name="name" placeholder="Jméno fotky (volitelné)"><br>
+      <input type="file" name="photo" required><br>
+      <button type="submit">Nahrát</button>
+    </form>
+    <p id="msg"></p>
+
+    <h2>Seznam fotek</h2>
+    <div id="adminPhotos"></div>
+  </div>
+
+  <script>
+    const adminUser = "15963";
+    const adminPass = "75321";
+
+    function login() {
+      const u = document.getElementById("username").value;
+      const p = document.getElementById("password").value;
+      if (u === adminUser && p === adminPass) {
+        document.getElementById("loginBox").style.display = "none";
+        document.getElementById("uploadBox").style.display = "block";
+        loadAdminPhotos();
+      } else alert("Špatné jméno nebo heslo!");
+    }
+
+    document.getElementById("uploadForm").addEventListener("submit", async e => {
+      e.preventDefault();
+      const formData = new FormData(e.target);
+      const res = await fetch("/upload", { method: "POST", body: formData });
+      const data = await res.json();
+      document.getElementById("msg").innerText = `✅ Fotka nahrána: ${data.name || data.filename}`;
+      loadAdminPhotos();
+    });
+
+    async function loadAdminPhotos() {
+      const res = await fetch("/photos");
+      const photos = await res.json();
+      const container = document.getElementById("adminPhotos");
+      container.innerHTML = "";
+      photos.forEach(p => {
+        const div = document.createElement("div");
+        div.className = "photo-admin";
+        div.innerHTML = `
+          <div style="display:flex; align-items:center;">
+            <img src="${p.filename}" alt="">
+            <span>${p.name || p.filename} (Score: ${p.score})</span>
+          </div>
+          <div class="score-update">
+            <input type="number" id="input-${p.id}" placeholder="Nové skóre">
+            <button onclick="updateScore(${p.id})">💾</button>
+          </div>
+          <button class="delete-btn" onclick="deletePhoto(${p.id})">❌ Smazat</button>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    async function deletePhoto(id) {
+      if (!confirm("Opravdu smazat tuto fotku?")) return;
+      await fetch("/delete/" + id, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ username: adminUser, password: adminPass })
+      });
+      loadAdminPhotos();
+    }
+
+    async function updateScore(id) {
+      const newScore = parseInt(document.getElementById(`input-${id}`).value);
+      if (isNaN(newScore)) return alert("Zadej číslo!");
+      await fetch("/admin/updateScore/" + id, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ username: adminUser, password: adminPass, score: newScore })
+      });
+      loadAdminPhotos();
+    }
+  </script>
+</body>
+</html>
