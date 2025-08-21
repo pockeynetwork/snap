@@ -5,23 +5,28 @@ const path = require("path");
 const fs = require("fs");
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
-// SQLite databáze
-const db = new sqlite3.Database("database.sqlite");
+// DB a uploads na persistentním disku Renderu
+const DATA_DIR = "/data";
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
+const UPLOAD_DIR = path.join(DATA_DIR, "uploads");
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
+
+const db = new sqlite3.Database(path.join(DATA_DIR, "database.sqlite"));
 db.serialize(() => {
   db.run("CREATE TABLE IF NOT EXISTS photos (id INTEGER PRIMARY KEY, filename TEXT, name TEXT)");
   db.run("CREATE TABLE IF NOT EXISTS votes (photo_id INTEGER, ip TEXT, vote INTEGER, UNIQUE(photo_id, ip))");
 });
 
-// Multer (upload)
+// Multer
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, "uploads/"),
+  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
   filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname))
 });
 const upload = multer({ storage });
 
-app.use(express.static("uploads"));
+app.use("/uploads", express.static(UPLOAD_DIR));
 app.use(express.static("views"));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -113,4 +118,5 @@ app.post("/vote/:id", (req, res) => {
   );
 });
 
-app.listen(PORT, () => console.log(`✅ Server běží na http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`✅ Server běží na portu ${PORT}`));
+
