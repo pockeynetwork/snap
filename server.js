@@ -11,7 +11,15 @@ const PORT = 3000;
 const db = new sqlite3.Database("database.sqlite");
 db.serialize(() => {
   db.run("CREATE TABLE IF NOT EXISTS photos (id INTEGER PRIMARY KEY, filename TEXT, name TEXT)");
-  db.run("CREATE TABLE IF NOT EXISTS votes (photo_id INTEGER, ip TEXT, vote INTEGER, UNIQUE(photo_id, ip))");
+  db.run(`
+    CREATE TABLE IF NOT EXISTS votes (
+      photo_id INTEGER,
+      ip TEXT,
+      vote INTEGER,
+      timestamp INTEGER,
+      UNIQUE(photo_id, ip)
+    )
+  `);
 });
 
 // Multer (upload)
@@ -22,7 +30,7 @@ const storage = multer.diskStorage({
 const upload = multer({ storage });
 
 // Servování statických souborů
-app.use(express.static(path.join(__dirname))); // root složka pro index.html a adminek.html
+app.use(express.static(path.join(__dirname))); // index.html, adminek.html
 app.use(express.static("uploads"));            // složka s nahranými fotkami
 
 app.use(express.json());
@@ -87,29 +95,48 @@ app.post("/admin/updateScore/:id", (req, res) => {
   db.run("DELETE FROM votes WHERE photo_id = ?", [id], function(err) {
     if (err) return res.status(500).json({ error: err });
     if (newScore !== 0) {
-      db.run("INSERT INTO votes (photo_id, ip, vote) VALUES (?, ?, ?)", [id, "admin", newScore], function(err2) {
-        if (err2) return res.status(500).json({ error: err2 });
-        res.json({ success: true });
-      });
+      db.run("INSERT INTO votes (photo_id, ip, vote, timestamp) VALUES (?, ?, ?, ?)", 
+        [id, "admin", newScore, Math.floor(Date.now()/1000)], 
+        function(err2) {
+          if (err2) return res.status(500).json({ error: err2 });
+          res.json({ success: true });
+        });
     } else {
       res.json({ success: true });
     }
   });
 });
 
-// API - hlasování
+// API - hlasování (omezení 24h)
 app.post("/vote/:id", (req, res) => {
   const photoId = req.params.id;
   const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
   const vote = req.body.vote;
+  const now = Math.floor(Date.now() / 1000);
 
-  db.run("INSERT OR REPLACE INTO votes (photo_id, ip, vote) VALUES (?, ?, ?)", 
-    [photoId, ip, vote], 
-    function(err) {
-      if (err) return res.status(500).json({error: err});
-      res.json({success: true});
+  db.get("SELECT timestamp FROM votes WHERE photo_id = ? AND ip = ?", [photoId, ip], (err, row) => {
+    if (err) return res.status(500).json({ error: err });
+
+    if (row) {
+      const elapsed = now - row.timestamp;
+      if (elapsed < 24 * 60 * 60) {
+        return res.status(429).json({ error: "Můžeš hlasovat znovu až za 24 hodin." });
+      }
+      db.run("UPDATE votes SET vote = ?, timestamp = ? WHERE photo_id = ? AND ip = ?",
+        [vote, now, photoId, ip],
+        function(err2) {
+          if (err2) return res.status(500).json({ error: err2 });
+          res.json({ success: true });
+        });
+    } else {
+      db.run("INSERT INTO votes (photo_id, ip, vote, timestamp) VALUES (?, ?, ?, ?)",
+        [photoId, ip, vote, now],
+        function(err2) {
+          if (err2) return res.status(500).json({ error: err2 });
+          res.json({ success: true });
+        });
     }
-  );
+  });
 });
 
 app.listen(PORT, () => console.log(`✅ Server běží na http://localhost:${PORT}`));
